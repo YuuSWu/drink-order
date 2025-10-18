@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>後台管理（Firebase）</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--accent:#2f6fe6;--danger:#ff6b6b;}
+body{font-family:"Microsoft JhengHei",sans-serif;background:var(--bg);margin:0;padding:18px;}
+.wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 420px;gap:18px;}
+.card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.06);}
+h2{margin:0 0 12px 0;color:#222;font-size:18px;}
+input,select,button{width:100%;padding:8px;border-radius:8px;border:1px solid #e0e6f0;margin-bottom:8px;font-size:14px;}
+.button-row{display:flex;gap:8px;}
+.small-btn{flex:1;padding:8px;border-radius:8px;border:none;background:#e9f0ff;cursor:pointer;}
+.btn{background:var(--accent);color:#fff;padding:8px;border-radius:8px;border:none;cursor:pointer;}
+.danger{background:var(--danger);color:#fff;padding:8px;border-radius:8px;border:none;cursor:pointer;}
+.list-item{padding:8px;border-radius:8px;border:1px solid #eef3ff;background:#fbfdff;margin-bottom:8px;}
+</style>
+</head>
+<body>
+<h1 style="text-align:center">後台管理（Firebase Realtime DB）</h1>
+<div class="wrap">
+  <div class="card">
+    <h2>飲品管理</h2>
+    <input id="newDrinkName" placeholder="新飲品名稱 (例：拿鐵)">
+    <div id="newSizes"></div>
+    <div class="button-row">
+      <button id="addSizeField" class="small-btn">＋ 新增尺寸欄</button>
+      <button id="saveDrink" class="btn">儲存飲品</button>
+    </div>
+    <div id="drinksList"></div>
+    <hr>
+    <h2>加料管理</h2>
+    <input id="addonName" placeholder="加料名稱">
+    <input id="addonPrice" type="number" placeholder="價格">
+    <button id="saveAddon" class="btn">儲存加料</button>
+    <div id="addonsList"></div>
+  </div>
+
+  <div class="card">
+    <h2>甜度 / 冰塊</h2>
+    <input id="sweetInput" placeholder="輸入甜度(例：無糖)">
+    <button id="addSweet" class="small-btn">新增甜度</button>
+    <div id="sweetsList"></div>
+    <hr>
+    <input id="iceInput" placeholder="輸入冰塊(例：去冰)">
+    <button id="addIce" class="small-btn">新增冰塊</button>
+    <div id="icesList"></div>
+    <hr>
+    <h2>訂單管理（所有人）</h2>
+    <div id="ordersList"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCYuFDqpAuy3n1Meqc08ucSPTZ8eB7EvWk",
+  authDomain: "order-system-8305a.firebaseapp.com",
+  databaseURL: "https://order-system-8305a-default-rtdb.firebaseio.com",
+  projectId: "order-system-8305a",
+  storageBucket: "order-system-8305a.firebasestorage.app",
+  messagingSenderId: "893609966993",
+  appId: "1:893609966993:web:e358bbaa3e99cd0b62ae30",
+  measurementId: "G-HDNC788YF3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const drinksRef = db.ref('settings/drinks');
+const addonsRef = db.ref('settings/addons');
+const sweetsRef = db.ref('settings/sweets');
+const icesRef = db.ref('settings/ices');
+const ordersRef = db.ref('orders');
+
+const newDrinkName=document.getElementById('newDrinkName');
+const newSizes=document.getElementById('newSizes');
+const addSizeField=document.getElementById('addSizeField');
+const saveDrink=document.getElementById('saveDrink');
+const drinksList=document.getElementById('drinksList');
+const addonName=document.getElementById('addonName');
+const addonPrice=document.getElementById('addonPrice');
+const saveAddon=document.getElementById('saveAddon');
+const addonsList=document.getElementById('addonsList');
+const sweetInput=document.getElementById('sweetInput');
+const addSweet=document.getElementById('addSweet');
+const sweetsList=document.getElementById('sweetsList');
+const iceInput=document.getElementById('iceInput');
+const addIce=document.getElementById('addIce');
+const icesList=document.getElementById('icesList');
+const ordersList=document.getElementById('ordersList');
+
+function addSizeFieldUI(label='',price=''){
+  const div=document.createElement('div');
+  div.innerHTML=`<input class="size-label" placeholder="尺寸 (例：中杯)" value="${label}">
+  <input class="size-price" type="number" placeholder="價格" value="${price}">
+  <button class="small-btn remove">刪除</button>`;
+  newSizes.appendChild(div);
+  div.querySelector('.remove').onclick=()=>div.remove();
+}
+addSizeFieldUI();
+addSizeField.onclick=()=>addSizeFieldUI();
+
+saveDrink.onclick=async()=>{
+  const name=newDrinkName.value.trim();
+  if(!name)return alert('請輸入飲品名稱');
+  const sizes=[...newSizes.querySelectorAll('.size-label')].map((el,i)=>{
+    const lbl=el.value.trim();
+    const pr=newSizes.querySelectorAll('.size-price')[i].value;
+    return lbl&&pr!==''?{label:lbl,price:Number(pr)}:null;
+  }).filter(Boolean);
+  if(sizes.length===0)return alert('請新增至少一組尺寸與價格');
+  try{
+    await drinksRef.push({name,sizes});
+    newDrinkName.value='';newSizes.innerHTML='';addSizeFieldUI();
+  }catch(e){alert('寫入失敗：'+e.message);}
+};
+
+saveAddon.onclick=async()=>{
+  const name=addonName.value.trim();
+  const price=Number(addonPrice.value);
+  if(!name||price==0)return alert('請輸入加料名稱與價格');
+  try{
+    await addonsRef.push({name,price});
+    addonName.value='';addonPrice.value='';
+  }catch(e){alert('寫入失敗：'+e.message);}
+};
+
+addSweet.onclick=()=>{const v=sweetInput.value.trim();if(!v)return;sweetsRef.push(v);sweetInput.value='';};
+addIce.onclick=()=>{const v=iceInput.value.trim();if(!v)return;icesRef.push(v);iceInput.value='';};
+
+drinksRef.on('value',snap=>{
+  const data=snap.val()||{};drinksList.innerHTML='';
+  Object.keys(data).forEach(k=>{
+    const d=data[k];
+    const div=document.createElement('div');div.className='list-item';
+    div.innerHTML=`<b>${d.name}</b><br>尺寸：${(d.sizes||[]).map(s=>`${s.label} $${s.price}`).join('，')}
+    <button class="small-btn" onclick="deleteDrink('${k}')">刪除</button>`;
+    drinksList.appendChild(div);
+  });
+});
+addonsRef.on('value',snap=>{
+  const data=snap.val()||{};addonsList.innerHTML='';
+  Object.keys(data).forEach(k=>{
+    const a=data[k];
+    const li=document.createElement('div');li.className='list-item';
+    li.innerHTML=`${a.name} - $${a.price}<button class="small-btn" onclick="deleteAddon('${k}')">刪除</button>`;
+    addonsList.appendChild(li);
+  });
+});
+sweetsRef.on('value',snap=>{
+  const data=snap.val()||{};sweetsList.innerHTML='';
+  Object.keys(data).forEach(k=>{
+    const v=data[k];
+    const li=document.createElement('div');li.className='list-item';
+    li.innerHTML=`${v}<button class="small-btn" onclick="deleteSweet('${k}')">刪除</button>`;
+    sweetsList.appendChild(li);
+  });
+});
+icesRef.on('value',snap=>{
+  const data=snap.val()||{};icesList.innerHTML='';
+  Object.keys(data).forEach(k=>{
+    const v=data[k];
+    const li=document.createElement('div');li.className='list-item';
+    li.innerHTML=`${v}<button class="small-btn" onclick="deleteIce('${k}')">刪除</button>`;
+    icesList.appendChild(li);
+  });
+});
+ordersRef.on('value',snap=>{
+  const data=snap.val()||{};ordersList.innerHTML='';
+  if(!data)return ordersList.innerHTML='<div>目前無訂單</div>';
+  Object.keys(data).reverse().forEach(k=>{
+    const o=data[k];
+    const div=document.createElement('div');div.className='list-item';
+    div.innerHTML=`<b>${o.customer}</b><br>${(o.items||[]).map(it=>`${it.drink}(${it.size}) ${(it.sweet||'')}/${(it.ice||'')} ${(it.addons?.length?'+'+it.addons.join(', '):'')} - $${it.total}`).join('<br>')}<br><b>總額：$${o.total}</b><br><button class="danger" onclick="deleteOrder('${k}')">刪除</button>`;
+    ordersList.appendChild(div);
+  });
+});
+
+window.deleteDrink=async(k)=>{if(confirm('刪除飲品？'))await drinksRef.child(k).remove();};
+window.deleteAddon=async(k)=>{if(confirm('刪除加料？'))await addonsRef.child(k).remove();};
+window.deleteSweet=async(k)=>{if(confirm('刪除甜度？'))await sweetsRef.child(k).remove();};
+window.deleteIce=async(k)=>{if(confirm('刪除冰塊？'))await icesRef.child(k).remove();};
+window.deleteOrder=async(k)=>{if(confirm('刪除訂單？'))await ordersRef.child(k).remove();};
+</script>
+</body>
+</html>

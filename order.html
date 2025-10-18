@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>線上點餐系統</title>
+<style>
+:root {
+  --bg:#f5f7fb; --card:#fff; --accent:#2f6fe6; --danger:#ff6b6b;
+}
+body {
+  font-family:"Microsoft JhengHei",sans-serif;
+  background:var(--bg); margin:0; padding:18px;
+}
+.container {
+  max-width:800px; margin:0 auto;
+}
+.card {
+  background:var(--card);
+  padding:14px;
+  border-radius:10px;
+  box-shadow:0 6px 18px rgba(0,0,0,0.06);
+  margin-bottom:14px;
+}
+h1 { text-align:center; }
+label { display:block; margin-bottom:6px; font-weight:600; }
+input,select,button {
+  width:100%; padding:8px;
+  border-radius:8px; border:1px solid #e0e6f0; margin-bottom:8px;
+}
+.btn {
+  background:var(--accent); color:#fff; border:none;
+  border-radius:8px; padding:10px; cursor:pointer;
+}
+.delete-btn {
+  background:var(--danger); color:#fff;
+  border:none; border-radius:8px; padding:6px 10px; cursor:pointer;
+}
+.list-item {
+  padding:8px;
+  border-radius:8px;
+  border:1px solid #eef3ff;
+  background:#fbfdff;
+  margin-bottom:8px;
+}
+.order-history-item {
+  padding:8px;
+  border-radius:8px;
+  background:#fff;
+  border:1px solid #e0e6f0;
+  margin-bottom:8px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>☕ 線上點餐系統</h1>
+
+  <div class="card">
+    <label>你的名字 / 座號</label>
+    <input id="customerName" placeholder="請輸入座號或名字" />
+  </div>
+
+  <div class="card">
+    <h2>選擇飲品</h2>
+    <select id="drinkSelect"><option value="">-- 請選擇飲品 --</option></select>
+    <div id="sizeArea"></div>
+    <div id="sweetArea"></div>
+    <div id="iceArea"></div>
+    <div id="addonArea"></div>
+    <div id="addonArea2"></div>
+    <button id="addToCart" class="btn">加入購物車</button>
+  </div>
+
+  <div class="card">
+    <h2>購物車</h2>
+    <div id="cartItems"></div>
+    <div style="text-align:right;font-weight:700;">總金額：$<span id="totalAmount">0</span></div>
+    <button id="submitOrder" class="btn" style="margin-top:8px;">送出訂單</button>
+  </div>
+
+  <div class="card">
+    <h2>🧾 我的訂單紀錄</h2>
+    <div id="myOrdersList">請先輸入名字以查看歷史訂單</div>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCYuFDqpAuy3n1Meqc08ucSPTZ8eB7EvWk",
+  authDomain: "order-system-8305a.firebaseapp.com",
+  databaseURL: "https://order-system-8305a-default-rtdb.firebaseio.com",
+  projectId: "order-system-8305a",
+  storageBucket: "order-system-8305a.firebasestorage.app",
+  messagingSenderId: "893609966993",
+  appId: "1:893609966993:web:e358bbaa3e99cd0b62ae30",
+  measurementId: "G-HDNC788YF3"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const drinksRef = db.ref('settings/drinks');
+const addonsRef = db.ref('settings/addons');
+const sweetsRef = db.ref('settings/sweets');
+const icesRef = db.ref('settings/ices');
+const ordersRef = db.ref('orders');
+
+let drinks = [], addons = [], sweets = [], ices = [];
+let cart = [];
+
+// UI elements
+const drinkSelect = document.getElementById('drinkSelect');
+const sizeArea = document.getElementById('sizeArea');
+const sweetArea = document.getElementById('sweetArea');
+const iceArea = document.getElementById('iceArea');
+const addonArea = document.getElementById('addonArea');
+const addonArea2 = document.getElementById('addonArea2');
+const cartItems = document.getElementById('cartItems');
+const totalAmount = document.getElementById('totalAmount');
+const myOrdersList = document.getElementById('myOrdersList');
+const customerInput = document.getElementById('customerName');
+
+// Load data from Firebase
+drinksRef.on('value', s=>{
+  const v = s.val()||{};
+  drinks = Object.keys(v).map(k=>({id:k,...v[k]}));
+  renderDrinks();
+});
+addonsRef.on('value', s=>{
+  const v = s.val()||{};
+  addons = Object.keys(v).map(k=>({id:k,...v[k]}));
+  renderAddonsSelectors();
+});
+sweetsRef.on('value', s=>{ const v=s.val()||{}; sweets=Object.keys(v).map(k=>v[k]); });
+icesRef.on('value', s=>{ const v=s.val()||{}; ices=Object.keys(v).map(k=>v[k]); });
+
+function renderDrinks(){
+  drinkSelect.innerHTML='<option value="">-- 請選擇飲品 --</option>'+
+    drinks.map(d=>`<option value="${d.id}">${d.name}</option>`).join('');
+  sizeArea.innerHTML=sweetArea.innerHTML=iceArea.innerHTML=addonArea.innerHTML=addonArea2.innerHTML='';
+}
+function renderAddonsSelectors(){
+  const opts = ['<option value="">不加料</option>']
+    .concat(addons.map((a,i)=>`<option value="${i}">${a.name} (+${a.price})</option>`)).join('');
+  addonArea.innerHTML = '<label>加料 1</label><select id="addonSelect1">'+opts+'</select>';
+  addonArea2.innerHTML = '<label>加料 2</label><select id="addonSelect2">'+opts+'</select>';
+}
+
+drinkSelect.addEventListener('change',()=>{
+  const id = drinkSelect.value;
+  sizeArea.innerHTML=sweetArea.innerHTML=iceArea.innerHTML=addonArea.innerHTML=addonArea2.innerHTML='';
+  if(!id) return;
+  const drink = drinks.find(d=>d.id===id);
+  if(!drink) return;
+  sizeArea.innerHTML = `<label>尺寸</label>
+    <select id="sizeSelect">
+      ${drink.sizes.map(s=>`<option value="${s.price}">${s.label} - $${s.price}</option>`).join('')}
+    </select>`;
+  if(sweets.length) sweetArea.innerHTML = `<label>甜度</label>
+    <select id="sweetSelect"><option value="">-- 請選擇甜度 --</option>${sweets.map(s=>`<option>${s}</option>`).join('')}</select>`;
+  if(ices.length) iceArea.innerHTML = `<label>冰塊</label>
+    <select id="iceSelect"><option value="">-- 請選擇冰塊 --</option>${ices.map(i=>`<option>${i}</option>`).join('')}</select>`;
+  renderAddonsSelectors();
+});
+
+document.getElementById('addToCart').addEventListener('click',()=>{
+  const name = customerInput.value.trim();
+  if(!name) return alert('請輸入名字或座號');
+  const drinkId = drinkSelect.value;
+  if(!drinkId) return alert('請選擇飲品');
+  const drink = drinks.find(d=>d.id===drinkId);
+  const sizeSel = document.getElementById('sizeSelect');
+  if(!sizeSel) return alert('請選擇尺寸');
+  const sizeLabel = sizeSel.options[sizeSel.selectedIndex].text.split(' - ')[0];
+  const sizePrice = Number(sizeSel.value);
+  const sweet = document.getElementById('sweetSelect')?.value || '';
+  const ice = document.getElementById('iceSelect')?.value || '';
+  const a1 = document.getElementById('addonSelect1')?.value;
+  const a2 = document.getElementById('addonSelect2')?.value;
+  const addonItems=[]; let addonTotal=0;
+  if(a1!==''){ const ad=addons[Number(a1)]; if(ad){addonItems.push(ad.name); addonTotal+=Number(ad.price);} }
+  if(a2!==''){ const ad=addons[Number(a2)]; if(ad){addonItems.push(ad.name); addonTotal+=Number(ad.price);} }
+  const subtotal=sizePrice+addonTotal;
+  cart.push({drink:drink.name,size:sizeLabel,sweet,ice,addons:addonItems,total:subtotal,customer:name});
+  renderCart();
+});
+
+function renderCart(){
+  cartItems.innerHTML='';
+  if(cart.length===0){ cartItems.innerHTML='<div>購物車為空</div>'; totalAmount.textContent='0'; return; }
+  cart.forEach((c,i)=>{
+    const div=document.createElement('div');
+    div.className='list-item';
+    div.innerHTML=`<div><b>${c.drink}</b> (${c.size}) ${(c.sweet?c.sweet+'/':'')+(c.ice?c.ice:'')}
+      ${(c.addons.length?'+ '+c.addons.join(', '):'')}</div>
+      <div>小計：$${c.total}</div>
+      <div><button class="delete-btn" onclick="removeItem(${i})">刪除</button></div>`;
+    cartItems.appendChild(div);
+  });
+  totalAmount.textContent = cart.reduce((sum,i)=>sum+i.total,0);
+}
+window.removeItem=i=>{ cart.splice(i,1); renderCart(); }
+
+document.getElementById('submitOrder').addEventListener('click',async()=>{
+  const name=customerInput.value.trim();
+  if(!name) return alert('請輸入名字');
+  if(cart.length===0) return alert('購物車為空');
+  const order={customer:name,items:cart,total:cart.reduce((s,i)=>s+i.total,0),time:new Date().toISOString()};
+  try{
+    await ordersRef.push(order);
+    alert('✅ 訂單已送出');
+    cart=[]; renderCart();
+  }catch(e){ alert('送出失敗：'+e.message); }
+});
+
+// === 歷史訂單即時顯示 ===
+customerInput.addEventListener('input', ()=>loadMyOrders());
+ordersRef.on('value', ()=>loadMyOrders());
+function loadMyOrders(){
+  const name = customerInput.value.trim();
+  if(!name){ myOrdersList.innerHTML='請先輸入名字以查看歷史訂單'; return; }
+  ordersRef.once('value', snap=>{
+    const data = snap.val()||{};
+    const orders = Object.values(data).filter(o=>o.customer===name);
+    if(orders.length===0){ myOrdersList.innerHTML='<div>目前無訂單紀錄</div>'; return; }
+    myOrdersList.innerHTML='';
+    orders.reverse().forEach(o=>{
+      const div=document.createElement('div');
+      div.className='order-history-item';
+      const date=new Date(o.time).toLocaleString('zh-TW',{hour12:false});
+      div.innerHTML=`<div><b>${date}</b></div>`+
+        o.items.map(it=>`${it.drink} (${it.size}) ${(it.sweet?it.sweet+'/':'')+(it.ice?it.ice:'')}
+        ${(it.addons&&it.addons.length?'+ '+it.addons.join(', '):'')} - $${it.total}`).join('<br>')+
+        `<div style="margin-top:4px;font-weight:700;">總額：$${o.total}</div>`;
+      myOrdersList.appendChild(div);
+    });
+  });
+}
+</script>
+</body>
+</html>
